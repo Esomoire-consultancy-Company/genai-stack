@@ -1,0 +1,64 @@
+name: GenAI Stack CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-validation:
+    name: Python and Compose validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check Python syntax without importing dependencies
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+
+          sources = sorted(Path(".").rglob("*.py"))
+          if not sources:
+              raise SystemExit("No Python source files were found")
+          for path in sources:
+              ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+          print(f"Validated {len(sources)} Python source files")
+          PY
+
+      - name: Validate Docker Compose configuration (no containers started)
+        run: docker compose -f docker-compose.yml config --quiet
+
+  frontend-build:
+    name: Svelte frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: front-end
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: front-end/package-lock.json
+
+      - name: Install locked frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend
+        run: npm run build
